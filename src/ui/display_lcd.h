@@ -12,4 +12,4 @@ struct LcdPins {
 
 bool display_init(const LcdPins& pins);
 void display_set_backlight(uint8_t duty_0_255);   // safe no-op if BL not wired
-void display_update(const Readings& r, bool wifiOk, const char* hostName);
+void display_update(const Readings& r, bool wifiOk, bool sdOk, const char* hostName);

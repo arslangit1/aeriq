@@ -32,7 +32,7 @@ static Field F_VOC   { 20,  252, 200, 24 };
 static Field F_NOX   { 140, 260,  90, 24 };
 
 
-static void drawHeader(bool wifiOk, const char* hostName) {
+static void drawHeader(bool wifiOk, bool sdOk, const char* hostName) {
   tft->fillRect(0, 0, TFT_W, 34, wifiOk ? ST77XX_GREEN : ST77XX_RED);
   tft->setTextColor(ST77XX_BLACK);
   tft->setTextSize(2);
@@ -41,6 +41,8 @@ static void drawHeader(bool wifiOk, const char* hostName) {
   tft->setTextSize(1);
   tft->setCursor(120, 10);
   tft->print(wifiOk ? "WiFi OK" : "WiFi DOWN");
+  tft->setCursor(120, 24);
+  tft->print(sdOk ? "SD OK" : "SD FAIL");
 
   tft->setCursor(8, 24);
   tft->print(hostName);
@@ -178,7 +180,7 @@ static void drawStaticLayout() {
   g_layoutDrawn = true;
 }
 
-void display_update(const Readings& r, bool wifiOk, const char* hostName) {
+void display_update(const Readings& r, bool wifiOk, bool sdOk, const char* hostName) {
   if (!g_ok || !tft) return;
 
   const uint32_t now = millis();
@@ -195,6 +197,8 @@ void display_update(const Readings& r, bool wifiOk, const char* hostName) {
   tft->setTextSize(1);
   tft->setCursor(128, 10);
   tft->print(wifiOk ? "WiFi OK " : "WiFi DOWN");
+  tft->setCursor(128, 24);
+  tft->print(sdOk ? "SD OK " : "SD FAIL");
 
   // Optional: hostName changes rarely; draw once if you want
   // (or clear just that area and redraw if needed)

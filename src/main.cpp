@@ -92,7 +92,7 @@ void loop() {
   Indicators::tick(g);
 
   // Update LCD display
-  display_update(g, WifiMgr::isConnected(), WEB_HOST_NAME);
+  display_update(g, WifiMgr::isConnected(), sdLogger.isReady(), WEB_HOST_NAME);
 
   // Log to SD card
   if (sdLogger.isReady()) {
