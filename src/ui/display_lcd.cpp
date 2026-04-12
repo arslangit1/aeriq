@@ -1,6 +1,4 @@
 #include "display_lcd.h"
-// #include "../app_state.h"
-// #include "../app_config.h"
 
 #include <SPI.h>
 #include <Adafruit_GFX.h>
@@ -73,7 +71,6 @@ bool display_init(const LcdPins& pins) {
   }
 
   // Construct the ST7789 with CS/DC/RST pins
-//   tft = Adafruit_ST7789(g_pins.cs, g_pins.dc, g_pins.rst);
     tft = new Adafruit_ST7789(g_pins.cs, g_pins.dc, g_pins.rst);
 
 
