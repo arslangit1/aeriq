@@ -74,4 +74,4 @@ static constexpr uint32_t SERIAL_STATUS_PERIOD_MS = 60000;    // print status li
 // Indicator timing parameters
 // =====================
 static constexpr uint32_t NP_CYCLE_PERIOD_MS   = 10000;  // every 10s
-static constexpr uint32_t NP_BLINK_ON_MS       = 150;    // one short status pulse
+static constexpr uint32_t NP_BLINK_ON_MS       = 40;     // very short status pulse
