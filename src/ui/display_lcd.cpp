@@ -1,248 +1,93 @@
 #include "display_lcd.h"
 
-#include <SPI.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7789.h>
 
-// 240x280 module
 static constexpr int TFT_W = 240;
 static constexpr int TFT_H = 280;
 
-// static Adafruit_ST7789 tft;     // will be constructed after pins are known
 static Adafruit_ST7789* tft = nullptr;
+static LcdPins g_pins { -1, -1, -1, -1, -1, -1 };
 static bool g_ok = false;
-
-static LcdPins g_pins { -1, -1, -1, -1 };
 static uint32_t g_lastDrawMs = 0;
 
-static bool g_layoutDrawn = false;
-
-// Coordinates for “value fields” you will update
-struct Field {
-  int x, y, w, h;
-};
-static Field F_TEMP  { 20,  68, 200, 24 };
-static Field F_RH    { 20,  92, 200, 24 };
-static Field F_CO2   { 140, 78,  90, 24 };
-
-static Field F_PM25  { 20,  162, 200, 24 };
-static Field F_PM10  { 140, 170,  90, 24 };
-
-static Field F_VOC   { 20,  252, 200, 24 };
-static Field F_NOX   { 140, 260,  90, 24 };
-
-
-static void drawHeader(bool wifiOk, bool sdOk, const char* hostName) {
-  tft->fillRect(0, 0, TFT_W, 34, wifiOk ? ST77XX_GREEN : ST77XX_RED);
-  tft->setTextColor(ST77XX_BLACK);
-  tft->setTextSize(2);
-  tft->setCursor(8, 8);
-  tft->print("IAQM");
-  tft->setTextSize(1);
-  tft->setCursor(120, 10);
-  tft->print(wifiOk ? "WiFi OK" : "WiFi DOWN");
-  tft->setCursor(120, 24);
-  tft->print(sdOk ? "SD OK" : "SD FAIL");
-
-  tft->setCursor(8, 24);
-  tft->print(hostName);
+static uint16_t okColor(bool ok) {
+  return ok ? ST77XX_GREEN : ST77XX_RED;
 }
 
-static void drawCard(int x, int y, int w, int h, const char* title) {
-  tft->drawRoundRect(x, y, w, h, 8, ST77XX_WHITE);
-  tft->setTextColor(ST77XX_WHITE);
-  tft->setTextSize(1);
-  tft->setCursor(x + 8, y + 6);
-  tft->print(title);
-}
-
-static void printValue(int x, int y, const String& s, uint16_t color = ST77XX_CYAN) {
+static void printAt(int x, int y, const String& text, uint16_t color = ST77XX_WHITE) {
   tft->setTextColor(color);
-  tft->setTextSize(2);
   tft->setCursor(x, y);
-  tft->print(s);
+  tft->print(text);
+}
+
+static String valueOrDash(float value, uint8_t decimals) {
+  if (isnan(value)) return "-";
+  return String(value, static_cast<unsigned int>(decimals));
 }
 
 bool display_init(const LcdPins& pins) {
   g_pins = pins;
 
-  // Backlight pin optional
   if (g_pins.bl >= 0) {
     pinMode(g_pins.bl, OUTPUT);
-    analogWrite(g_pins.bl, 255); // full brightness
+    analogWrite(g_pins.bl, 255);
   }
 
-  // Construct the ST7789 with CS/DC/RST pins
-    tft = new Adafruit_ST7789(g_pins.cs, g_pins.dc, g_pins.rst);
+  Serial.printf("[LCD] CS=%d DC=%d RST=%d BL=%d MOSI=%d SCK=%d\n",
+                g_pins.cs, g_pins.dc, g_pins.rst, g_pins.bl,
+                g_pins.mosi, g_pins.sck);
 
-
-  // Use hardware SPI (SCK/MOSI pins on the Feather)
-  tft->init(TFT_W, TFT_H);      // 240x280
-  tft->setRotation(0);          // adjust later if you want landscape
-
-  tft->fillScreen(ST77XX_BLACK);
+  tft = new Adafruit_ST7789(g_pins.cs, g_pins.dc, g_pins.mosi, g_pins.sck,
+                            g_pins.rst);
+  tft->init(TFT_W, TFT_H);
+  tft->setRotation(0);
   tft->setTextWrap(false);
+  tft->fillScreen(ST77XX_BLACK);
 
   g_ok = true;
-  g_lastDrawMs = 0;
-
   return true;
 }
 
 void display_set_backlight(uint8_t duty_0_255) {
-  if (!g_ok) return;
-  if (g_pins.bl < 0) return; // BL tied to 3V
+  if (!g_ok || g_pins.bl < 0) return;
   analogWrite(g_pins.bl, duty_0_255);
 }
 
-static void clearField(const Field& f) {
-  tft->fillRect(f.x, f.y, f.w, f.h, ST77XX_BLACK);
-}
-
-static void drawStaticLayout() {
-  tft->fillScreen(ST77XX_BLACK);
-
-  // Header bar
-  tft->fillRect(0, 0, TFT_W, 34, ST77XX_BLUE);
-  tft->setTextColor(ST77XX_WHITE);
-  tft->setTextSize(2);
-  tft->setCursor(8, 8);
-  tft->print("IAQM");
-
-  // Cards + titles (unchanging)
-  
-  // Layout: 2 columns x 3 rows of cards
-  const int margin = 10;
-  const int cardW = (TFT_W - 3 * margin) / 2;
-  const int cardH = 70;
-
-  int x1 = margin;
-  int x2 = margin * 2 + cardW;
-  int y1 = 44;
-  int y2 = y1 + cardH + margin;
-  int y3 = y2 + cardH + margin;
-
-  // Card 1: Temp/RH (SHT45 ambient)
-  drawCard(x1, y1, cardW, cardH, "Temp / RH (SHT45)");
-//   {
-//     String line1 = String(r.tC, 1) + " C";
-//     String line2 = String(r.rh, 1) + " %";
-//     printValue(x1 + 10, y1 + 24, line1);
-//     tft->setTextSize(2);
-//     tft->setTextColor(ST77XX_YELLOW);
-//     tft->setCursor(x1 + 10, y1 + 48);
-//     tft->print(line2);
-//   }
-
-  // Card 2: CO2
-  drawCard(x2, y1, cardW, cardH, "CO2 (S88)");
-//   {
-//     String v = (r.co2_ppm > 0) ? (String(r.co2_ppm) + " ppm") : String("-");
-//     printValue(x2 + 10, y1 + 32, v);
-//   }
-
-  // Card 3: PM2.5
-  drawCard(x1, y2, cardW, cardH, "PM2.5 (SEN55)");
-//   {
-//     String v = String(r.pm2_5, 1) + " ug/m3";
-//     printValue(x1 + 10, y2 + 32, v);
-//   }
-
-  // Card 4: PM10
-  drawCard(x2, y2, cardW, cardH, "PM10 (SEN55)");
-//   {
-//     String v = String(r.pm10_0, 1) + " ug/m3";
-//     printValue(x2 + 10, y2 + 32, v);
-//   }
-
-  // Card 5: VOC Index
-  drawCard(x1, y3, cardW, cardH, "VOC Index");
-//   {
-//     String v = String(r.voc_index);
-//     printValue(x1 + 10, y3 + 32, v);
-//   }
-
-  // Card 6: NOx Index
-  drawCard(x2, y3, cardW, cardH, "NOx Index");
-//   {
-//     String v = String(r.nox_index);
-//     printValue(x2 + 10, y3 + 32, v);
-//   }
-
-  // Small footer
-  tft->setTextColor(ST77XX_WHITE);
-  tft->setTextSize(1);
-  tft->setCursor(8, TFT_H - 10);
-  tft->print("Uptime: ");
-//   tft->print(r.ms / 1000);
-  tft->print("s");
-
-  g_layoutDrawn = true;
-}
-
-void display_update(const Readings& r, bool wifiOk, bool sdOk, const char* hostName) {
+void display_update(const Readings& r, bool wifiOk, bool sdOk) {
   if (!g_ok || !tft) return;
 
   const uint32_t now = millis();
   if (now - g_lastDrawMs < 1000) return;
   g_lastDrawMs = now;
 
-  if (!g_layoutDrawn) {
-    drawStaticLayout();
-  }
-
-  // Update only the header “WiFi status” small region
-  tft->fillRect(120, 0, 120, 34, wifiOk ? ST77XX_GREEN : ST77XX_RED);
-  tft->setTextColor(ST77XX_BLACK);
-  tft->setTextSize(1);
-  tft->setCursor(128, 10);
-  tft->print(wifiOk ? "WiFi OK " : "WiFi DOWN");
-  tft->setCursor(128, 24);
-  tft->print(sdOk ? "SD OK " : "SD FAIL");
-
-  // Optional: hostName changes rarely; draw once if you want
-  // (or clear just that area and redraw if needed)
-
-  // ---- Update fields (clear small regions then redraw numbers) ----
-  clearField(F_TEMP);
-  tft->setTextColor(ST77XX_CYAN);
+  tft->fillScreen(ST77XX_BLACK);
   tft->setTextSize(2);
-  tft->setCursor(F_TEMP.x, F_TEMP.y);
-  tft->print(String(r.tC, 1));
-  tft->print(" C");
+  printAt(8, 6, "IAQM", ST77XX_CYAN);
 
-  clearField(F_RH);
-  tft->setTextColor(ST77XX_YELLOW);
-  tft->setCursor(F_RH.x, F_RH.y);
-  tft->print(String(r.rh, 1));
-  tft->print(" %");
+  tft->setTextSize(1);
+  printAt(8, 30, r.rtc_ok ? String(r.timestamp) : String("RTC not ready"),
+          r.rtc_ok ? ST77XX_WHITE : ST77XX_YELLOW);
 
-  clearField(F_CO2);
-  tft->setTextColor(ST77XX_CYAN);
-  tft->setCursor(F_CO2.x, F_CO2.y);
-  if (r.co2_ppm > 0) {
-    tft->print(r.co2_ppm);
-    tft->print(" ppm");
-  } else {
-    tft->print("-");
-  }
+  printAt(8, 48, "WiFi", okColor(wifiOk));
+  printAt(56, 48, "SD", okColor(sdOk));
+  printAt(92, 48, "RTC", okColor(r.rtc_ok));
+  printAt(132, 48, "VEML", okColor(r.veml_ok));
+  printAt(180, 48, "SEN", okColor(r.sen55_ok));
+  printAt(216, 48, "S88", okColor(r.s88_ok));
 
-  clearField(F_PM25);
-  tft->setCursor(F_PM25.x, F_PM25.y);
-  tft->print(String(r.pm2_5, 1));
-  tft->print(" ug/m3");
+  int y = 70;
+  printAt(8, y, "Temp: " + valueOrDash(r.tC, 1) + " C"); y += 16;
+  printAt(8, y, "RH:   " + valueOrDash(r.rh, 1) + " %"); y += 16;
+  printAt(8, y, "CO2:  " + String(r.co2_ppm) + " ppm"); y += 16;
+  printAt(8, y, "Lux:  " + valueOrDash(r.lux, 1)); y += 16;
+  printAt(8, y, "ALS:  " + String(r.als)); y += 16;
+  printAt(8, y, "PM1:  " + valueOrDash(r.pm1_0, 1)); y += 16;
+  printAt(8, y, "PM2.5:" + valueOrDash(r.pm2_5, 1)); y += 16;
+  printAt(8, y, "PM4:  " + valueOrDash(r.pm4_0, 1)); y += 16;
+  printAt(8, y, "PM10: " + valueOrDash(r.pm10_0, 1)); y += 16;
+  printAt(8, y, "VOC:  " + valueOrDash(r.voc_index, 1)); y += 16;
+  printAt(8, y, "NOx:  " + valueOrDash(r.nox_index, 1)); y += 16;
 
-  clearField(F_PM10);
-  tft->setCursor(F_PM10.x, F_PM10.y);
-  tft->print(String(r.pm10_0, 1));
-  tft->print(" ug/m3");
-
-  clearField(F_VOC);
-  tft->setCursor(F_VOC.x, F_VOC.y);
-  tft->print(r.voc_index);
-
-  clearField(F_NOX);
-  tft->setCursor(F_NOX.x, F_NOX.y);
-  tft->print(r.nox_index);
+  printAt(8, 258, "Log every 10s", ST77XX_YELLOW);
 }
-

@@ -3,12 +3,7 @@
 #include <SPI.h>
 #include <SD.h>
 
-// static SPIClass sdSpi(VSPI);
-// Use default SPI instance (portable across ESP32 cores)
-// #define sdSpi SPI
-
 SPIClass sdSPI(FSPI); // Use FSPI for SD
-// SPIClass sdSPI(HSPI); // Use HSPI for SD
 
 static bool sdBeginWithFallbacks(uint8_t csPin, uint32_t preferredFreqHz) {
   const uint32_t freqs[] = { preferredFreqHz, 1000000UL, 400000UL };
@@ -47,7 +42,6 @@ bool SdLogger::begin(uint8_t csPin, int sckPin, int misoPin, int mosiPin, uint32
     return false;
   }
 
-  // Print card info
   uint8_t cardType = SD.cardType();
   Serial.print("[SD] Card type: ");
   Serial.print(cardType);
@@ -68,35 +62,13 @@ bool SdLogger::begin(uint8_t csPin, int sckPin, int misoPin, int mosiPin, uint32
       Serial.println(" (Unknown)");
   }
 
-  // Print card size in MB
   uint64_t cardSize = SD.cardSize() / (1024ULL * 1024ULL);
   Serial.print("[SD] Card size: ");
   Serial.print((uint32_t)cardSize);
   Serial.println(" MB");
 
-  // Print directory contents
-  Serial.println("[SD] Contents of SD card's root directory:");
-  File root = SD.open("/");
-  if (root) {
-    File file = root.openNextFile();
-    while (file) {
-      if (file.isDirectory()) {
-        Serial.print("  DIR : ");
-        Serial.println(file.name());
-      } else {
-        Serial.print("  FILE: ");
-        Serial.print(file.name());
-        Serial.print("  SIZE: ");
-        Serial.println(file.size());
-      }
-      file = root.openNextFile();
-    }
-  } else {
-    Serial.println("[SD] Failed to open root directory");
-  }
-
   _ready = true;
-  _headerWritten = false; // re-check on boot
+  _headerWritten = false;
   if (!ensureFile()) {
     Serial.println("[SD] Failed to ensure log file.");
     return false;
@@ -145,9 +117,8 @@ void SdLogger::writeHeaderIfNeeded() {
     return;
   }
 
-  // CSV header
   fw.println(
-    "ts_ms,temp_c,rh_pct,lux,white,als,co2_ppm,pm1_0,pm2_5,pm4_0,pm10,sen55_tC,sen55_rh,voc_index,nox_index,"
+    "timestamp,ts_ms,wifi_ok,rtc_ok,veml_ok,sen55_ok,s88_ok,sd_ok,temp_c,rh_pct,lux,white,als,co2_ppm,pm1_0,pm2_5,pm4_0,pm10,voc_index,nox_index"
   );
   fw.flush();
   fw.close();
@@ -155,8 +126,7 @@ void SdLogger::writeHeaderIfNeeded() {
   _headerWritten = true;
 }
 
-bool SdLogger::appendSample(const Readings& r) {
-  // Each append opens, writes, flushes, and closes the file to ensure data integrity even if the card is removed or power is lost immediately after logging.
+bool SdLogger::appendSample(const Readings& r, bool wifiOk) {
   if (!_ready) return false;
 
   if (!ensureFile()){
@@ -164,33 +134,36 @@ bool SdLogger::appendSample(const Readings& r) {
       return false;
   } 
 
-  // Open file for appending
   File f = SD.open(_filePath.c_str(), FILE_APPEND);
   if (!f){
     Serial.println("[SD] Failed to open log file for appending.");
     return false;
   } 
 
-  // Keep formatting stable and parse-friendly
+  f.print(r.timestamp); f.print(',');
   f.print(r.ms); f.print(',');
+  f.print(wifiOk ? 1 : 0); f.print(',');
+  f.print(r.rtc_ok ? 1 : 0); f.print(',');
+  f.print(r.veml_ok ? 1 : 0); f.print(',');
+  f.print(r.sen55_ok ? 1 : 0); f.print(',');
+  f.print(r.s88_ok ? 1 : 0); f.print(',');
+  f.print(_ready ? 1 : 0); f.print(',');
 
   f.print(r.tC, 2); f.print(',');
   f.print(r.rh, 2); f.print(',');
 
   f.print(r.lux, 2); f.print(',');
   f.print(r.white, 2); f.print(',');
-  f.print(r.als, 2); f.print(',');
+  f.print(r.als); f.print(',');
 
-  f.print(r.co2_ppm, 2); f.print(',');
+  f.print(r.co2_ppm); f.print(',');
 
   f.print(r.pm1_0, 1); f.print(',');
   f.print(r.pm2_5, 1); f.print(',');
   f.print(r.pm4_0, 1); f.print(',');
   f.print(r.pm10_0, 1);  f.print(',');
-  f.print(r.sen55_tC, 1); f.print(',');
-  f.print(r.sen55_rh, 1);  f.print(',');
   f.print(r.voc_index, 1); f.print(',');
-  f.print(r.nox_index, 1); f.print(',');
+  f.print(r.nox_index, 1);
 
   f.println();
   f.flush();

@@ -3,5 +3,5 @@
 
 namespace Indicators {
   void begin();
-  void tick(const Readings& state);
+  void tick(const Readings& state, bool wifiOk, bool sdOk);
 }

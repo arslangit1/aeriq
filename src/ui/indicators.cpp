@@ -2,41 +2,34 @@
 #include "../app_config.h"
 
 #include <Arduino.h>
-#include <WiFi.h>
 #include <Adafruit_NeoPixel.h>
-#include "../sensors/sensors.h"
 
-// ---------------------------
-// LED pins (robust defaults)
-// ---------------------------
 #ifndef LED_BUILTIN
   #define LED_BUILTIN 13
 #endif
 
-#ifndef PIN_NEOPIXEL
-  // Fallback if core doesn't define it (most Adafruit cores do define it)
-  #define PIN_NEOPIXEL 33
-#endif
+static Adafruit_NeoPixel pixel(1, NEOPIXEL_PIN, NEO_GRBW + NEO_KHZ800);
 
-// One NeoPixel on-board
-static Adafruit_NeoPixel pixel(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
+static uint32_t cycleStartMs = 0;
+static bool pulseOn = false;
 
-// ---------------------------
-// Indicator runtime state
-// ---------------------------
-static uint32_t wifiBlinkT0 = 0;
+static bool isAbnormal(const Readings& r) {
+  if (!isnan(r.tC) && (r.tC < 0.0f || r.tC > 40.0f)) return true;
+  if (!isnan(r.rh) && (r.rh < 20.0f || r.rh > 80.0f)) return true;
+  if (r.co2_ppm > 1000) return true;
+  if (!isnan(r.pm2_5) && r.pm2_5 > 35.0f) return true;
+  if (!isnan(r.pm10_0) && r.pm10_0 > 150.0f) return true;
+  if (!isnan(r.voc_index) && r.voc_index > 250.0f) return true;
+  if (!isnan(r.nox_index) && r.nox_index > 20.0f) return true;
+  return false;
+}
 
-static uint32_t npCycleT0 = 0;
-static uint32_t npStepT0  = 0;
-static int npRemainingBlinks = 0;
-static bool npIsOn = false;
+static bool devicesOk(const Readings& r, bool wifiOk, bool sdOk) {
+  return wifiOk && sdOk && r.veml_ok && r.sen55_ok && r.s88_ok;
+}
 
-static void setNeoPixelBlue(bool on) {
-  if (on) {
-    pixel.setPixelColor(0, pixel.Color(0, 0, 50)); // blue (not too bright)
-  } else {
-    pixel.setPixelColor(0, 0);
-  }
+static void setPixel(uint32_t color) {
+  pixel.setPixelColor(0, color);
   pixel.show();
 }
 
@@ -46,61 +39,47 @@ void begin() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
 
-  // Some Adafruit boards require NeoPixel power enable (compile-time defines)
-  #if defined(NEOPIXEL_POWER)
+  #ifdef PIN_NEOPIXEL
+    pinMode(PIN_NEOPIXEL, OUTPUT);
+    digitalWrite(PIN_NEOPIXEL, LOW);
+  #endif
+
+  #ifdef NEOPIXEL_POWER
     pinMode(NEOPIXEL_POWER, OUTPUT);
-    digitalWrite(NEOPIXEL_POWER, HIGH);
-  #elif defined(PIN_NEOPIXEL_POWER)
-    pinMode(PIN_NEOPIXEL_POWER, OUTPUT);
-    digitalWrite(PIN_NEOPIXEL_POWER, HIGH);
+    digitalWrite(NEOPIXEL_POWER, LOW);
   #endif
 
   pixel.begin();
-  setNeoPixelBlue(false);
+  pixel.setBrightness(255);
+  pixel.clear();
+  pixel.show();
 
-  wifiBlinkT0 = millis();
-  npCycleT0   = millis();
-  npStepT0    = millis();
+  cycleStartMs = millis();
 }
 
-void tick(const Readings& state) {
+void tick(const Readings& state, bool wifiOk, bool sdOk) {
+  digitalWrite(LED_BUILTIN, LOW);
+
   const uint32_t now = millis();
-  const bool wifiOk = (WiFi.status() == WL_CONNECTED);
+  const uint32_t elapsed = now - cycleStartMs;
 
-  // Fixed LED: blink once every 2s when WiFi OK, otherwise OFF
-  if (!wifiOk) {
-    digitalWrite(LED_BUILTIN, LOW);
-  } else {
-    uint32_t phase = (now - wifiBlinkT0) % WIFI_BLINK_PERIOD_MS;
-    digitalWrite(LED_BUILTIN, (phase < WIFI_BLINK_ON_MS) ? HIGH : LOW);
-  }
+  if (elapsed >= NP_CYCLE_PERIOD_MS) {
+    cycleStartMs = now;
+    pulseOn = true;
 
-  // NeoPixel: every 10s, blink n times (blue), where n = healthy sensors
-  if (now - npCycleT0 >= NP_CYCLE_PERIOD_MS) {
-    npCycleT0 = now;
-
-    npRemainingBlinks = Sensors::countHealthy(state);
-    npIsOn = false;
-    npStepT0 = now;
-    setNeoPixelBlue(false);
-  }
-
-  if (npRemainingBlinks > 0) {
-    if (!npIsOn) {
-      if (now - npStepT0 >= NP_BLINK_OFF_MS) {
-        npIsOn = true;
-        npStepT0 = now;
-        setNeoPixelBlue(true);
-      }
+    if (!devicesOk(state, wifiOk, sdOk)) {
+      setPixel(pixel.Color(50, 0, 0, 0));
+    } else if (isAbnormal(state)) {
+      setPixel(pixel.Color(0, 0, 50, 0));
     } else {
-      if (now - npStepT0 >= NP_BLINK_ON_MS) {
-        npIsOn = false;
-        npStepT0 = now;
-        setNeoPixelBlue(false);
-        npRemainingBlinks--;
-      }
+      setPixel(pixel.Color(0, 50, 0, 0));
     }
   }
+
+  if (pulseOn && (now - cycleStartMs >= NP_BLINK_ON_MS)) {
+    pulseOn = false;
+    setPixel(0);
+  }
 }
 
-} // namespace Indicators
+}

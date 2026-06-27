@@ -11,7 +11,13 @@ void begin() {
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.persistent(false);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  WiFi.setSleep(false);
+
+  if (WIFI_PASS[0] == '\0') {
+    WiFi.begin(WIFI_SSID);
+  } else {
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+  }
 
   const uint32_t start = millis();
   while (WiFi.status() != WL_CONNECTED) {

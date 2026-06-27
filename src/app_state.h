@@ -24,9 +24,11 @@ struct Readings {
   float nox_index = NAN;
 
   bool veml_ok = false;  // VEML7700 initialized successfully
-  bool sht_ok  = false;  // last SHT read succeeded
   bool s88_ok = false;   // last Senseair S88 read succeeded
   bool sen55_ok = false; // SEN55 initialized successfully
+  bool rtc_ok = false;   // RTC present and time decoded
+
+  char timestamp[24] = "-"; // YYYY-MM-DD HH:MM:SS or "-"
 };
 
 extern Readings g;

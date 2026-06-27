@@ -15,46 +15,47 @@
 #include "ui/display_lcd.h"
 
 #include "misc/sd_logger.h"
-
-#include <SPI.h>
-#include <SD.h>
-
-#define sdSpi SPI
+#include "misc/rtc_clock.h"
 
 static SdLogger sdLogger;
-static SPISettings sdProbeSettings(400000, MSBFIRST, SPI_MODE0);
+
+static void updateRtcState() {
+  RtcDateTime dt;
+  g.rtc_ok = RtcClock::read(dt);
+  if (g.rtc_ok) {
+    String stamp = RtcClock::format(dt);
+    stamp.toCharArray(g.timestamp, sizeof(g.timestamp));
+  } else {
+    strlcpy(g.timestamp, "-", sizeof(g.timestamp));
+  }
+}
 
 void setup() {
   Serial.begin(115200);
-  delay(2000); // wait for 2 seconds for serial monitor
+  delay(1000);
 
-  Serial.println("\nAerIQ - Indoor Air Quality Monitor");
+  Serial.println();
+  Serial.println("AerIQ - Indoor Air Quality Monitor");
 
-  // // Initialize SD card logger
-  // bool sdOk = sdLogger.begin(SD_CS_PIN, SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_SPI_FREQ);
-  // if (!sdOk) {
-  //   Serial.println("[SD] SD Card initialization failed (card missing, wiring, or CS conflict). Logging disabled.");
-  // } else {
-  //   Serial.println("[SD] SD Card Initialized successfully.");
-  //   Serial.print("[SD] logging to ");
-  //   Serial.println(sdLogger.filePath());
-  // }
+  pinMode(I2C_POWER_PIN, OUTPUT);
+  digitalWrite(I2C_POWER_PIN, HIGH);
+  delay(50);
 
-  // Initialize I2C
   Wire.begin();
   Wire.setClock(100000);
-  
-
-  // Define LCD pins and initialize display
-  LcdPins lcdPins;
-  lcdPins.cs  = LCD_CS_PIN;
-  lcdPins.dc  = LCD_DC_PIN;
-  lcdPins.rst = LCD_RST_PIN;
-  lcdPins.bl  = LCD_BL_PIN;
-
-  display_init(lcdPins);
-
   I2CUtils::scan(Serial);
+
+  RtcClock::begin(Wire, RTC_I2C_ADDR);
+  updateRtcState();
+
+  LcdPins lcdPins;
+  lcdPins.cs = LCD_CS_PIN;
+  lcdPins.dc = LCD_DC_PIN;
+  lcdPins.rst = LCD_RST_PIN;
+  lcdPins.bl = LCD_BL_PIN;
+  lcdPins.mosi = LCD_MOSI_PIN;
+  lcdPins.sck = LCD_SCK_PIN;
+  display_init(lcdPins);
 
   Indicators::begin();
   Sensors::begin(g);
@@ -63,43 +64,34 @@ void setup() {
   WebServerMgr::begin();
   MdnsMgr::begin();
 
-  Serial.println("Open a browser to: http://iaqm.local/  (or use the IP printed above)");
-
-    // Initialize SD card logger
   bool sdOk = sdLogger.begin(SD_CS_PIN, SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_SPI_FREQ);
-  if (!sdOk) {
-    Serial.println("[SD] SD Card initialization failed (card missing, wiring, or CS conflict). Logging disabled.");
-  } else {
-    Serial.println("[SD] SD Card Initialized successfully.");
-    Serial.print("[SD] logging to ");
-    Serial.println(sdLogger.filePath());
-  }
+  Serial.println(sdOk ? "[SD] Logger ready" : "[SD] Logger unavailable");
+
+  Serial.println("Open a browser to: http://iaqm.local/");
 }
 
 void loop() {
-  // Handle networking
   WebServerMgr::tick();
   WifiMgr::tick();
+  updateRtcState();
 
-  // Periodic sensor read
   static uint32_t lastReadMs = 0;
   if (millis() - lastReadMs >= SENSOR_READ_PERIOD_MS) {
     Sensors::read(g, WifiMgr::isConnected());
     lastReadMs = millis();
   }
 
-  // Update indicators
-  Indicators::tick(g);
+  const bool wifiOk = WifiMgr::isConnected();
+  const bool sdOk = sdLogger.isReady();
 
-  // Update LCD display
-  display_update(g, WifiMgr::isConnected(), sdLogger.isReady(), WEB_HOST_NAME);
+  Indicators::tick(g, wifiOk, sdOk);
+  display_update(g, wifiOk, sdOk);
 
-  // Log to SD card
-  if (sdLogger.isReady()) {
-    if (!sdLogger.appendSample(g)) {
-      Serial.println("[SD] append failed (card removed? FS issue?).");
+  static uint32_t lastLogMs = 0;
+  if (sdLogger.isReady() && millis() - lastLogMs >= SD_LOG_PERIOD_MS) {
+    if (!sdLogger.appendSample(g, wifiOk)) {
+      Serial.println("[SD] append failed.");
     }
+    lastLogMs = millis();
   }
-
 }
-

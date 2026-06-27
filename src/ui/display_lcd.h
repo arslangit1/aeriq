@@ -8,8 +8,10 @@ struct LcdPins {
   int8_t dc;
   int8_t rst;
   int8_t bl;   // optional; set to -1 if tied to 3V
+  int8_t mosi;
+  int8_t sck;
 };
 
 bool display_init(const LcdPins& pins);
 void display_set_backlight(uint8_t duty_0_255);   // safe no-op if BL not wired
-void display_update(const Readings& r, bool wifiOk, bool sdOk, const char* hostName);
+void display_update(const Readings& r, bool wifiOk, bool sdOk);
