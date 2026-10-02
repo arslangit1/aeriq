@@ -354,7 +354,7 @@ static WebServer server(80);
 //             </div>
 //             <div class="hint">
 //               <span>Comfort</span>
-//               <span id="shtok" class="tag neutral">SHT45: —</span>
+//               <span id="shtok" class="tag neutral">SEN55 T/RH: —</span>
 //             </div>
 //             <div class="chartWrap">
 //               <canvas id="chT" class="chart" width="900" height="240"></canvas>
@@ -735,7 +735,7 @@ static WebServer server(80);
 //           const als = Number(j.als);
 //           const ms  = Number(j.uptime_ms);
 
-//           const shtOk  = !!j.sht45_ok;
+//           const shtOk  = !!j.sen55_ok;
 //           const vemlOk = !!j.veml7700_ok;
 //           const s88Ok  = (j.s88_ok === undefined) ? true : !!j.s88_ok;
 
@@ -749,7 +749,7 @@ static WebServer server(80);
 //           $('co2').textContent = isFinite(co2) ? Math.round(co2) : '—';
 
 //           // Health tags
-//           $('shtok').textContent = 'SHT45: ' + (shtOk ? 'OK' : 'ERR');
+//           $('shtok').textContent = 'SEN55 T/RH: ' + (shtOk ? 'OK' : 'ERR');
 //           $('shtok').className = 'tag ' + (shtOk ? 'good' : 'bad');
 
 //           $('vemlok').textContent = 'VEML7700: ' + (vemlOk ? 'OK' : 'ERR');
@@ -1626,7 +1626,7 @@ static void handleRoot() {
         const voc  = Number(j.voc_index);
         const nox  = Number(j.nox_index);
 
-        const shtOk  = !!j.temp_rh_ok;
+        const shtOk  = !!j.sen55_ok;
         const vemlOk = !!j.veml7700_ok;
         const s88Ok  = !!j.s88_ok;
         const senOk  = !!j.sen55_ok;
@@ -1743,8 +1743,6 @@ static void handleJson() {
   doc["white"]           = isnan(g.white) ? 0 : g.white;
   doc["als"]             = g.als;
   doc["co2_ppm"]         = g.co2_ppm;
-  doc["temp_rh_ok"]      = g.sen55_ok;
-  doc["sht45_ok"]        = g.sen55_ok; // legacy dashboard field
   doc["veml7700_ok"]     = g.veml_ok;
   doc["s88_ok"]          = g.s88_ok;
   doc["sen55_ok"]        = g.sen55_ok;
@@ -1775,7 +1773,6 @@ static void handleMetrics() {
   out += "white " + String(g.white, 2) + "\n";
   out += "als " + String(g.als) + "\n";
   out += "co2_ppm " + String(g.co2_ppm) + "\n";
-  out += "temp_rh_ok " + String(g.sen55_ok ? 1 : 0) + "\n";
   out += "veml7700_ok " + String(g.veml_ok ? 1 : 0) + "\n";
   out += "s88_ok " + String(g.s88_ok ? 1 : 0) + "\n";
   out += "wifi_ok " + String((WiFi.status() == WL_CONNECTED) ? 1 : 0) + "\n";

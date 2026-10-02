@@ -139,9 +139,11 @@ bool isReady() {
 }
 
 String format(const RtcDateTime& dt) {
-  char buf[24];
-  snprintf(buf, sizeof(buf), "%04u-%02u-%02u %02u:%02u:%02u",
-           dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
+  const uint8_t hour12 = (dt.hour % 12 == 0) ? 12 : dt.hour % 12;
+  const char* meridiem = dt.hour < 12 ? "AM" : "PM";
+  char buf[32];
+  snprintf(buf, sizeof(buf), "%04u-%02u-%02u %02u:%02u:%02u %s",
+           dt.year, dt.month, dt.day, hour12, dt.minute, dt.second, meridiem);
   return String(buf);
 }
 

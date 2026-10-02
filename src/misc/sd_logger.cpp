@@ -22,6 +22,9 @@ static bool sdBeginWithFallbacks(uint8_t csPin, uint32_t preferredFreqHz) {
 }
 
 bool SdLogger::begin(uint8_t csPin, int sckPin, int misoPin, int mosiPin, uint32_t spiFreqHz) {
+  _ready = false;
+  _headerWritten = false;
+
   // Set the internal state based on the provided SPI pins and frequency
   _csPin = csPin;
   _sckPin = sckPin;
@@ -68,9 +71,9 @@ bool SdLogger::begin(uint8_t csPin, int sckPin, int misoPin, int mosiPin, uint32
   Serial.println(" MB");
 
   _ready = true;
-  _headerWritten = false;
   if (!ensureFile()) {
     Serial.println("[SD] Failed to ensure log file.");
+    _ready = false;
     return false;
   }
   return true;
@@ -90,17 +93,17 @@ bool SdLogger::ensureFile() {
     f.close();
   }
 
-  writeHeaderIfNeeded();
-  return true;
+  return writeHeaderIfNeeded();
 }
 
-void SdLogger::writeHeaderIfNeeded() {
-  if (_headerWritten || !_ready) return;
+bool SdLogger::writeHeaderIfNeeded() {
+  if (_headerWritten) return true;
+  if (!_ready) return false;
 
   File f = SD.open(_filePath.c_str(), FILE_READ);
   if (!f) {
     Serial.println("[SD] Failed to open log file for reading.");
-    return;
+    return false;
   }
 
   bool empty = (f.size() == 0);
@@ -108,13 +111,13 @@ void SdLogger::writeHeaderIfNeeded() {
 
   if (!empty) {
     _headerWritten = true;
-    return;
+    return true;
   }
 
   File fw = SD.open(_filePath.c_str(), FILE_WRITE);
   if (!fw) {
     Serial.println("[SD] Failed to open log file for writing.");
-    return;
+    return false;
   }
 
   fw.println(
@@ -124,6 +127,7 @@ void SdLogger::writeHeaderIfNeeded() {
   fw.close();
 
   _headerWritten = true;
+  return true;
 }
 
 bool SdLogger::appendSample(const Readings& r, bool wifiOk) {

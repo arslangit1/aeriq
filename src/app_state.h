@@ -28,7 +28,7 @@ struct Readings {
   bool sen55_ok = false; // SEN55 initialized successfully
   bool rtc_ok = false;   // RTC present and time decoded
 
-  char timestamp[24] = "-"; // YYYY-MM-DD HH:MM:SS or "-"
+  char timestamp[32] = "-"; // YYYY-MM-DD hh:mm:ss AM/PM or "-"
 };
 
 extern Readings g;

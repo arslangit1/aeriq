@@ -16,7 +16,7 @@ public:
 
 private:
   bool ensureFile();
-  void writeHeaderIfNeeded();
+  bool writeHeaderIfNeeded();
 
 private:
   bool _ready = false;
